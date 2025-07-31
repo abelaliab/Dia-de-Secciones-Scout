@@ -16,20 +16,23 @@ import RestrictionPriorities from "./components/RestrictionPriorities";
 import SectionCard from "./components/SectionCard";
 import AssignmentStats from "./components/AssignmentStats";
 
-// Mock data
+// API Service
+import sectionOrganizerAPI from "./services/api";
+
+// Mock data for demo purposes
 import { 
   mockPeople, 
   mockContinuityList, 
   mockLimits, 
-  mockRestrictionPriorities,
-  mockAssignPeople,
-  mockGetStatistics 
+  mockRestrictionPriorities
 } from "./mock";
 
 // Icons
-import { Play, RotateCcw, Settings, Users, Target } from "lucide-react";
+import { Play, RotateCcw, Settings, Users, Target, Loader2 } from "lucide-react";
 
 const Home = () => {
+  // State management
+  const [sessionId, setSessionId] = useState(null);
   const [people, setPeople] = useState([]);
   const [limits, setLimits] = useState(mockLimits);
   const [continuityList, setContinuityList] = useState([]);
@@ -37,20 +40,124 @@ const Home = () => {
   const [assignments, setAssignments] = useState(null);
   const [statistics, setStatistics] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Initialize session on component mount
+  useEffect(() => {
+    initializeSession();
+  }, []);
+
+  const initializeSession = async () => {
+    setIsLoading(true);
+    const result = await sectionOrganizerAPI.createSession();
+    if (result.success) {
+      setSessionId(result.data.session_id);
+      toast({
+        title: "Sesión iniciada",
+        description: "Nueva sesión creada exitosamente."
+      });
+    } else {
+      toast({
+        title: "Error",
+        description: "No se pudo crear la sesión: " + result.error,
+        variant: "destructive"
+      });
+    }
+    setIsLoading(false);
+  };
+
   // Load mock data for demo
-  const loadMockData = () => {
-    setPeople(mockPeople);
-    setContinuityList(mockContinuityList);
-    toast({
-      title: "Datos de prueba cargados",
-      description: "Se han cargado datos de ejemplo para probar la aplicación."
-    });
+  const loadMockData = async () => {
+    if (!sessionId) {
+      toast({
+        title: "Error",
+        description: "No hay sesión activa",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      // Save people
+      const peopleResult = await sectionOrganizerAPI.savePeople(mockPeople, sessionId);
+      if (!peopleResult.success) throw new Error(peopleResult.error);
+
+      // Save limits
+      const limitsResult = await sectionOrganizerAPI.saveLimits(mockLimits, sessionId);
+      if (!limitsResult.success) throw new Error(limitsResult.error);
+
+      // Save continuity list
+      const continuityResult = await sectionOrganizerAPI.saveContinuityList(mockContinuityList, sessionId);
+      if (!continuityResult.success) throw new Error(continuityResult.error);
+
+      // Save priorities
+      const prioritiesResult = await sectionOrganizerAPI.savePriorities(mockRestrictionPriorities, sessionId);
+      if (!prioritiesResult.success) throw new Error(prioritiesResult.error);
+
+      // Update local state
+      setPeople(mockPeople);
+      setContinuityList(mockContinuityList);
+      setLimits(mockLimits);
+      setRestrictionPriorities(mockRestrictionPriorities);
+
+      toast({
+        title: "Datos de prueba cargados",
+        description: "Se han cargado y guardado datos de ejemplo para probar la aplicación."
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al cargar datos de prueba: " + error.message,
+        variant: "destructive"
+      });
+    }
+    
+    setIsLoading(false);
+  };
+
+  // Save current configuration to backend
+  const saveConfiguration = async () => {
+    if (!sessionId) return;
+
+    setIsLoading(true);
+    
+    try {
+      await Promise.all([
+        sectionOrganizerAPI.savePeople(people, sessionId),
+        sectionOrganizerAPI.saveLimits(limits, sessionId),
+        sectionOrganizerAPI.saveContinuityList(continuityList, sessionId),
+        sectionOrganizerAPI.savePriorities(restrictionPriorities, sessionId)
+      ]);
+
+      toast({
+        title: "Configuración guardada",
+        description: "Todos los datos se han guardado correctamente."
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al guardar configuración: " + error.message,
+        variant: "destructive"
+      });
+    }
+
+    setIsLoading(false);
   };
 
   // Run automatic assignment
   const runAssignment = async () => {
+    if (!sessionId) {
+      toast({
+        title: "Error",
+        description: "No hay sesión activa",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (people.length === 0) {
       toast({
         title: "Error",
@@ -62,63 +169,128 @@ const Home = () => {
 
     setIsProcessing(true);
     
-    // Simulate processing time
-    setTimeout(() => {
-      const result = mockAssignPeople(people, limits, continuityList, restrictionPriorities);
-      const stats = mockGetStatistics(result, people, limits);
+    try {
+      // Save current configuration first
+      await saveConfiguration();
       
-      setAssignments(result);
-      setStatistics(stats);
-      setIsProcessing(false);
+      // Execute assignment
+      const result = await sectionOrganizerAPI.executeAssignment(sessionId);
       
+      if (result.success) {
+        const assignment = result.data.assignment;
+        
+        // Convert assignments to format expected by frontend
+        const formattedAssignments = {};
+        Object.keys(assignment.assignments).forEach(section => {
+          formattedAssignments[section] = assignment.assignments[section] || [];
+        });
+        
+        setAssignments(formattedAssignments);
+        setStatistics(assignment.statistics);
+        
+        toast({
+          title: "Asignación completada",
+          description: `Se han asignado ${assignment.statistics.assigned} personas en las 5 secciones.`
+        });
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
       toast({
-        title: "Asignación completada",
-        description: `Se han asignado ${stats.assigned} personas en las 5 secciones.`
+        title: "Error en asignación",
+        description: error.message,
+        variant: "destructive"
       });
-    }, 2000);
+    }
+    
+    setIsProcessing(false);
   };
 
   // Handle manual person movement between sections
-  const handlePersonMove = (person, fromSection, toSection) => {
-    if (!assignments) return;
+  const handlePersonMove = async (person, fromSection, toSection) => {
+    if (!sessionId || !assignments) return;
     
-    setAssignments(prev => {
-      const newAssignments = { ...prev };
+    try {
+      const result = await sectionOrganizerAPI.movePerson(
+        sessionId, 
+        person.name, 
+        fromSection, 
+        toSection
+      );
       
-      // Remove from source section
-      newAssignments[fromSection] = newAssignments[fromSection].filter(p => p.name !== person.name);
-      
-      // Add to target section
-      newAssignments[toSection] = [...newAssignments[toSection], person];
-      
-      return newAssignments;
-    });
+      if (result.success) {
+        // Update local assignments state
+        setAssignments(prev => {
+          const newAssignments = { ...prev };
+          
+          // Remove from source section
+          newAssignments[fromSection] = newAssignments[fromSection].filter(p => p.name !== person.name);
+          
+          // Add to target section
+          newAssignments[toSection] = [...newAssignments[toSection], person];
+          
+          return newAssignments;
+        });
 
-    // Update statistics
-    if (assignments) {
-      const newStats = mockGetStatistics(assignments, people, limits);
-      setStatistics(newStats);
+        // Update statistics
+        setStatistics(result.data.statistics);
+
+        toast({
+          title: "Persona movida",
+          description: `${person.name} ha sido movido de ${fromSection} a ${toSection}.`
+        });
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al mover persona: " + error.message,
+        variant: "destructive"
+      });
     }
-
-    toast({
-      title: "Persona movida",
-      description: `${person.name} ha sido movido de ${fromSection} a ${toSection}.`
-    });
   };
 
   // Reset all data
-  const resetAll = () => {
+  const resetAll = async () => {
+    if (sessionId) {
+      const result = await sectionOrganizerAPI.deleteSession(sessionId);
+      if (!result.success) {
+        toast({
+          title: "Advertencia",
+          description: "No se pudo eliminar la sesión anterior",
+          variant: "destructive"
+        });
+      }
+    }
+
+    // Clear local state
     setPeople([]);
     setContinuityList([]);
     setLimits(mockLimits);
     setRestrictionPriorities(mockRestrictionPriorities);
     setAssignments(null);
     setStatistics(null);
+    
+    // Create new session
+    await initializeSession();
+    
     toast({
       title: "Datos reiniciados",
-      description: "Todos los datos han sido limpiados."
+      description: "Todos los datos han sido limpiados y se ha creado una nueva sesión."
     });
   };
+
+  if (isLoading && !sessionId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Inicializando sesión...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -138,6 +310,13 @@ const Home = () => {
             <Badge variant="secondary" className="bg-amber-100 text-amber-800">Esculta</Badge>
             <Badge variant="secondary" className="bg-red-100 text-red-800">Clan</Badge>
           </div>
+          {sessionId && (
+            <div className="mt-2">
+              <Badge variant="outline" className="text-xs">
+                Sesión: {sessionId.slice(0, 8)}...
+              </Badge>
+            </div>
+          )}
         </div>
 
         {/* Main Content */}
@@ -161,19 +340,35 @@ const Home = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap justify-center gap-3">
-                  <Button onClick={loadMockData} variant="outline">
-                    <Users className="w-4 h-4 mr-2" />
+                  <Button 
+                    onClick={loadMockData} 
+                    variant="outline"
+                    disabled={isLoading || !sessionId}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Users className="w-4 h-4 mr-2" />
+                    )}
                     Cargar Datos de Prueba
                   </Button>
                   <Button 
                     onClick={runAssignment} 
-                    disabled={isProcessing || people.length === 0}
+                    disabled={isProcessing || people.length === 0 || !sessionId || isLoading}
                     className="bg-green-600 hover:bg-green-700"
                   >
-                    <Play className="w-4 h-4 mr-2" />
+                    {isProcessing ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4 mr-2" />
+                    )}
                     {isProcessing ? "Procesando..." : "Ejecutar Asignación"}
                   </Button>
-                  <Button onClick={resetAll} variant="destructive">
+                  <Button 
+                    onClick={resetAll} 
+                    variant="destructive"
+                    disabled={isLoading}
+                  >
                     <RotateCcw className="w-4 h-4 mr-2" />
                     Reiniciar Todo
                   </Button>
