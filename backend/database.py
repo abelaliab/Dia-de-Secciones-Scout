@@ -135,7 +135,11 @@ class Database:
         """Get latest assignment for a session"""
         session = await self.get_session(session_id)
         if session and session.current_assignment:
-            return Assignment(**session.current_assignment)
+            # Check if it's already an Assignment object or a dict
+            if isinstance(session.current_assignment, Assignment):
+                return session.current_assignment
+            else:
+                return Assignment(**session.current_assignment)
         return None
     
     async def update_assignment(self, session_id: str, assignments: Dict[str, List[Person]], 
