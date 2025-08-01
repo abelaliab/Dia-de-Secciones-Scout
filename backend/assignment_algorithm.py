@@ -56,10 +56,10 @@ class SectionAssigner:
             elif self._can_assign_to_section(assignments, person.option2):
                 assignments[person.option2].append(person)
                 assigned = True
-            # Try any available section (excluding veto)
+            # Try any available section (excluding veto if not "Ninguna")
             else:
                 for section in self.sections:
-                    if (section != person.veto and 
+                    if ((person.veto == "Ninguna" or section != person.veto) and 
                         self._can_assign_to_section(assignments, section)):
                         assignments[section].append(person)
                         assigned = True
@@ -106,7 +106,7 @@ class SectionAssigner:
         for person in remaining_people:
             assigned = False
             for section in self.sections:
-                if (section != person.veto and 
+                if ((person.veto == "Ninguna" or section != person.veto) and 
                     self._can_assign_to_section(assignments, section)):
                     assignments[section].append(person)
                     assigned = True
@@ -158,7 +158,7 @@ class SectionAssigner:
                     satisfaction.firstChoice += 1
                 elif person.option2 == section:
                     satisfaction.secondChoice += 1
-                elif person.veto == section:
+                elif person.veto != "Ninguna" and person.veto == section:
                     satisfaction.veto += 1
                 else:
                     satisfaction.other += 1

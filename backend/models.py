@@ -5,6 +5,7 @@ import uuid
 
 # Section types
 SECTIONS = ["Colonia", "Manada", "Tropa", "Esculta", "Clan"]
+VETO_OPTIONS = SECTIONS + ["Ninguna"]
 
 class Person(BaseModel):
     name: str
