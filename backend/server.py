@@ -261,3 +261,11 @@ async def shutdown_db_client():
     """Close database connection on shutdown"""
     # Note: Motor handles connection pooling automatically
     pass
+
+import os
+
+port = int(os.environ.get("PORT", 8000))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("server:app", host="0.0.0.0", port=port)
